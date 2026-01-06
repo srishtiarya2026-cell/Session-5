@@ -1,4 +1,5 @@
 streamlit
 markitdown
 requests
-libmagic
+pdfminer.six
+beautifulsoup4

@@ -7,13 +7,14 @@ import requests
 # App Configuration
 st.set_page_config(page_title="Universal Doc Converter", page_icon="📄", layout="wide")
 
-def get_file_size(size_in_bytes):
-    """Converts bytes to a human-readable string (MB)."""
-    return round(size_in_bytes / (1024 * 1024), 2)
+def get_file_size_mb(size_in_bytes):
+    """Converts bytes to MB string."""
+    return round(size_in_bytes / (1024 * 1024), 4)
 
 def main():
     st.title("📄 Universal Document-to-Text Converter")
-    
+    st.markdown("Convert Office docs, PDFs, and HTML to Markdown instantly.")
+
     # Initialize Engine
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 (UniversalDocConverter/1.0)"})
@@ -28,65 +29,54 @@ def main():
 
     if uploaded_files:
         for uploaded_file in uploaded_files:
-            current_file_name = uploaded_file.name
-            base_name = os.path.splitext(current_file_name)[0]
-            extension = os.path.splitext(current_file_name)[1]
-            
-            # Get original size
+            # Capture file details immediately
+            fname = uploaded_file.name
             original_size_bytes = uploaded_file.size
-            original_size_mb = get_file_size(original_size_bytes)
+            base_name = os.path.splitext(fname)[0]
+            extension = os.path.splitext(fname)[1]
+            
+            # Place processing inside a container for clean UI per file
+            with st.container():
+                try:
+                    # 1. Process File
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+                        tmp.write(uploaded_file.getbuffer())
+                        tmp_path = tmp.name
 
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp_file:
-                    tmp_file.write(uploaded_file.getbuffer())
-                    tmp_file_path = tmp_file.name
-
-                with st.spinner(f"Processing {current_file_name}..."):
-                    result = md.convert(tmp_file_path)
-                    converted_text = result.text_content
-                
-                # Calculate converted size
-                converted_size_bytes = len(converted_text.encode('utf-8'))
-                converted_size_mb = get_file_size(converted_size_bytes)
-                
-                # Calculate percentage reduction
-                if original_size_bytes > 0:
-                    reduction = ((original_size_bytes - converted_size_bytes) / original_size_bytes) * 100
-                else:
-                    reduction = 0
-
-                # Create Tabs for the specific file
-                tab1, tab2 = st.tabs(["📝 Conversion & Preview", "📊 File Size Comparison"])
-
-                with tab1:
-                    st.text_area("Content", value=converted_text, height=300, key=f"txt_{current_file_name}")
-                    c1, c2 = st.columns(2)
-                    c1.download_button("Download MD", converted_text, f"{base_name}.md", "text/markdown", key=f"md_{current_file_name}")
-                    c2.download_button("Download TXT", converted_text, f"{base_name}.txt", "text/plain", key=f"txt_{current_file_name}")
-
-                with tab2:
-                    st.subheader(f"Storage Metrics: {current_file_name}")
+                    with st.spinner(f"Converting {fname}..."):
+                        result = md.convert(tmp_path)
+                        text_out = result.text_content
                     
-                    # Create the comparison table
-                    metrics_data = {
-                        "File State": ["Original File", "Converted Text File"],
-                        "Size (MB)": [f"{original_size_mb} MB", f"{converted_size_mb} MB"]
-                    }
-                    st.table(metrics_data)
+                    # 2. Calculate Stats
+                    converted_size_bytes = len(text_out.encode('utf-8'))
+                    reduction = ((original_size_bytes - converted_size_bytes) / original_size_bytes) * 100
 
-                    # Show the percentage highlight
-                    if reduction > 0:
-                        st.success(f"✨ **Text version is {reduction:.1f}% smaller** than the original file.")
-                    else:
-                        st.info("The file size remained roughly the same.")
+                    # 3. Display Tabs
+                    t1, t2 = st.tabs(["📝 Conversion & Preview", "📊 File Size Comparison"])
+                    
+                    with t1:
+                        st.text_area("Markdown Content", value=text_out, height=300, key=f"area_{fname}")
+                        c1, c2 = st.columns(2)
+                        c1.download_button("Download .md", text_out, f"{base_name}_converted.md", "text/markdown", key=f"md_{fname}")
+                        c2.download_button("Download .txt", text_out, f"{base_name}_converted.txt", "text/plain", key=f"txt_{fname}")
 
-                os.remove(tmp_file_path)
+                    with t2:
+                        st.subheader("Efficiency Metrics")
+                        # Create Comparison Table
+                        st.table({
+                            "Version": ["Original File", "Converted Text"],
+                            "Size (MB)": [f"{get_file_size_mb(original_size_bytes)} MB", f"{get_file_size_mb(converted_size_bytes)} MB"]
+                        })
+                        st.success(f"📈 **Text version is {reduction:.1f}% smaller** than the original!")
 
-            except Exception as e:
-                st.error(f"⚠️ Could not read {current_file_name}. Please check the format.")
-                with st.sidebar:
-                    st.warning(f"Technical Log for {current_file_name}:")
-                    st.code(str(e))
+                    # Cleanup
+                    os.remove(tmp_path)
+
+                except Exception as e:
+                    # This error now ONLY shows if the 'try' block fails
+                    st.error(f"⚠️ Could not read {fname}. Please check the format.")
+                    with st.expander("View Error Details"):
+                        st.code(str(e))
 
 if __name__ == "__main__":
     main()
